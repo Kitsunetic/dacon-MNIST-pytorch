@@ -9,6 +9,7 @@ import numpy as np
 import pandas as pd
 import torch
 import torch.nn as nn
+import torch_optimizer
 from sklearn.model_selection import train_test_split
 from torch.utils.data import DataLoader
 from tqdm import tqdm
@@ -29,7 +30,8 @@ def main(args):
     batch_size = args.batch_size
     num_epochs = args.num_epochs
     train_valid_ratio = args.train_valid_ratio
-    early_stopping_patience = 15
+    early_stopping_patience = 30
+    cpus = args.cpus
     gpus = args.gpus
     model_name = args.model_name
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -40,22 +42,25 @@ def main(args):
     X_train, X_valid, Y_train, Y_valid = train_test_split(X, Y, test_size=train_valid_ratio)
     train_ds = datasets.BaseDataset(X_train, Y_train, is_train=True)
     valid_ds = datasets.BaseDataset(X_valid, Y_valid, is_train=False)
-    train_loader = DataLoader(train_ds, batch_size, shuffle=True)
-    valid_loader = DataLoader(valid_ds, batch_size, shuffle=False)
+    train_loader = DataLoader(train_ds, batch_size, num_workers=cpus, shuffle=True)
+    valid_loader = DataLoader(valid_ds, batch_size, num_workers=cpus, shuffle=False)
+    print(f'Dataset: train[{len(train_ds)}] validation[{len(valid_ds)}]')
 
     # load submit data
     test_csv = pd.read_csv('data/test.csv')
     submission = pd.read_csv('data/submission.csv')
     X, Y, Z = datasets.parse_csv(test_csv)
     submit_ds = datasets.BaseDataset(X, is_train=False)
-    submit_loader = DataLoader(submit_ds, batch_size, shuffle=False)
+    submit_loader = DataLoader(submit_ds, batch_size, num_workers=cpus, shuffle=False)
 
     # make model
-    model = models.make_model(model_name).to(device)
+    model = models.make_model(model_name)
     if gpus > 1:
         model = nn.DataParallel(model)
+    model = model.to(device)
     criterion = nn.CrossEntropyLoss().to(device)
-    optimizer = torch.optim.Adam(model.parameters())
+    # optimizer = torch.optim.Adam(model.parameters())
+    optimizer = torch_optimizer.RAdam(model.parameters())
 
     min_loss = math.inf
     early_stopping_counter = 0
@@ -82,7 +87,7 @@ def main(args):
                 accuracy = correct / total
                 losses.append(loss.item())
                 mean_loss = sum(losses) / len(losses)
-                t.set_postfix_str(f'loss: {mean_loss:.4f} accuracy: {accuracy:.4f}', refresh=False)
+                t.set_postfix_str(f'loss: {mean_loss:.4f} acc: {accuracy:.4f}', refresh=False)
                 t.update()
 
         # validation
@@ -103,7 +108,7 @@ def main(args):
                     accuracy = correct / total
                     losses.append(loss.item())
                     mean_loss = sum(losses) / len(losses)
-                    t.set_postfix_str(f'loss: {mean_loss:.4f} accuracy: {accuracy:.4f}', refresh=False)
+                    t.set_postfix_str(f'val_loss: {mean_loss:.4f} val_acc: {accuracy:.4f}', refresh=False)
                     t.update()
 
         # save checkpoint only when val_loss decreased
@@ -121,6 +126,7 @@ def main(args):
                 }, f)
 
             min_loss = mean_loss
+            early_stopping_counter = 0
         else:
             # early stopping
             early_stopping_counter += 1
@@ -164,7 +170,8 @@ if __name__ == '__main__':
     p = argparse.ArgumentParser()
     p.add_argument('--batch-size', type=int, default=64)
     p.add_argument('--num-epochs', type=int, default=200)
-    p.add_argument('--gpus', type=int, default=1)
+    p.add_argument('--cpus', type=str, default=12)
+    p.add_argument('--gpus', type=str, default=1)
     p.add_argument('--train-valid-ratio', type=float, default=0.2)
     p.add_argument('--checkpoint-dir', type=str, default='checkpoint')
     p.add_argument('--seed', type=int, default=867243624)
