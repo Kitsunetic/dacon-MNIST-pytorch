@@ -25,7 +25,7 @@ def main(args):
 
     # hyper parameters
     experiment_name = args.name
-    checkpoint_dir = Path(args.checkpoint_dir) / args.name
+    checkpoint_dir = Path(args.checkpoint_dir) / experiment_name
     checkpoint_dir.mkdir(parents=True, exist_ok=True)
     batch_size = args.batch_size
     num_epochs = args.num_epochs
