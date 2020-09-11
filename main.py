@@ -1,5 +1,6 @@
 import argparse
 import math
+import os
 import random
 import sys
 import time
@@ -27,14 +28,22 @@ def main(args):
     experiment_name = args.name
     checkpoint_dir = Path(args.checkpoint_dir) / experiment_name
     checkpoint_dir.mkdir(parents=True, exist_ok=True)
+    minimum_checkpoint_epoch = 10  # the minimum epoch to save checkpoint
     batch_size = args.batch_size
     num_epochs = args.num_epochs
     train_valid_ratio = args.train_valid_ratio
     early_stopping_patience = 30
+    lr_decay_patience = args.lr_decay_patience
     cpus = args.cpus
     gpus = args.gpus
     model_name = args.model_name
+    lr = 1e-3
+    lr_decay_rate = 0.5
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+    letter_model_checkpoint = args.letter_model
+    if letter_model_checkpoint and not os.path.exists(letter_model_checkpoint):
+        raise FileNotFoundError(f'Letter model checkpoint not fount: {letter_model_checkpoint}')
 
     # load train data
     train_csv = pd.read_csv('data/train.csv')
@@ -54,16 +63,21 @@ def main(args):
     submit_loader = DataLoader(submit_ds, batch_size, num_workers=cpus, shuffle=False)
 
     # make model
-    model = models.make_model(model_name)
+    if letter_model_checkpoint:
+        model = models.composite_model(letter_model_checkpoint)
+    else:
+        model = models.get_digit_model(model_name)
+
     if gpus > 1:
         model = nn.DataParallel(model)
     model = model.to(device)
     criterion = nn.CrossEntropyLoss().to(device)
     # optimizer = torch.optim.Adam(model.parameters())
-    optimizer = torch_optimizer.RAdam(model.parameters())
+    optimizer = torch_optimizer.RAdam(model.parameters(), lr=lr)
 
     min_loss = math.inf
     early_stopping_counter = 0
+    lr_decay_counter = 0
     best_checkpoint = None
     for epoch in range(1, num_epochs + 1):
         # train
@@ -113,26 +127,37 @@ def main(args):
 
         # save checkpoint only when val_loss decreased
         if mean_loss < min_loss:
-            time.sleep(0.25)
-            checkpoint_path = str(
-                checkpoint_dir / f'ckpt-epoch{epoch:03d}-val_loss{mean_loss:.4f}-val_acc{accuracy:.4f}.pth')
-            best_checkpoint = checkpoint_path
-            print(f'val_loss decreased from', min_loss, 'to', mean_loss)
-            print('Save checkpoint to', checkpoint_path)
-            with open(checkpoint_path, 'wb') as f:
-                torch.save({
-                    'model_state_dict': model.state_dict() if gpus <= 1 else model.module.state_dict(),
-                    'optimizer_state_dict': optimizer.state_dict()
-                }, f)
+            if epoch > minimum_checkpoint_epoch:
+                time.sleep(0.25)
+                checkpoint_path = str(
+                    checkpoint_dir / f'ckpt-epoch{epoch:03d}-val_loss{mean_loss:.4f}-val_acc{accuracy:.4f}.pth')
+                best_checkpoint = checkpoint_path
+                print(f'val_loss decreased from', min_loss, 'to', mean_loss)
+                print('Save checkpoint to', checkpoint_path)
+                with open(checkpoint_path, 'wb') as f:
+                    torch.save({
+                        'model_state_dict': model.state_dict() if gpus <= 1 else model.module.state_dict(),
+                        'optimizer_state_dict': optimizer.state_dict()
+                    }, f)
 
-            min_loss = mean_loss
-            early_stopping_counter = 0
+                min_loss = mean_loss
+                early_stopping_counter = 0
+                lr_decay_counter = 0
         else:
             # early stopping
             early_stopping_counter += 1
             if early_stopping_counter > early_stopping_patience:
                 print('Early stopping: val_loss didn\'t decreased for', early_stopping_counter, 'epochs.')
                 break
+
+            # lr decay
+            lr_decay_counter += 1
+            if lr_decay_counter > lr_decay_patience:
+                print('LR decaying from', lr, 'to', lr * lr_decay_rate)
+                lr_decay_counter = 0
+                lr *= lr_decay_rate
+                for param_group in optimizer.param_groups:
+                    param_group['lr'] = lr
 
     # load best checkpoint
     print('Load best checkpoint:', best_checkpoint)
@@ -175,6 +200,8 @@ if __name__ == '__main__':
     p.add_argument('--train-valid-ratio', type=float, default=0.2)
     p.add_argument('--checkpoint-dir', type=str, default='checkpoint')
     p.add_argument('--seed', type=int, default=867243624)
+    p.add_argument('--lr-decay-patience', type=int, default=5)
+    p.add_argument('--letter-model', type=str)
     p.add_argument('name', type=str)
     p.add_argument('model_name', type=str)
 

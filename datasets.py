@@ -65,27 +65,30 @@ class BaseDataset(torch.utils.data.Dataset):
         self.Y = torch.tensor(Y) if Y is not None else None
         self.is_train = is_train
 
-        self.transform = RandomAffine(threshold=0.4, degrees=20, scale=0.05, horizontal_shift=0.05, vertical_shift=0.05)
+        self.transform = RandomAffine(threshold=0.4, degrees=30, scale=0.25, horizontal_shift=0.25, vertical_shift=0.25)
 
-    def _preprocess(self, img: np.ndarray) -> torch.Tensor:
-        # LANCZOS 등은 blur 효과가 강해서, 여기에서는 별로인듯. qubic이 좋겠음.
-        img = cv2.resize(img, (280, 280), interpolation=cv2.INTER_CUBIC)
+    def _imresize(self, img: np.ndarray) -> np.ndarray:
+        img = cv2.resize(img, (280, 280))
         img = np.squeeze(img).astype(np.float32) / 255.
         img2 = img * (img >= 0.549)  # 140 / 255
 
         img_comb = np.stack([img, img2], axis=2)
-        img_comb = torch.tensor(img_comb, dtype=torch.float32)
-        img_comb = img_comb.permute([2, 0, 1])
         return img_comb
+
+    def _totensor(self, img: np.ndarray) -> torch.Tensor:
+        img = torch.tensor(img, dtype=torch.float32)
+        img = img.permute([2, 0, 1])
+        return img
 
     def __len__(self):
         return self.X.shape[0]
 
     def __getitem__(self, idx):
         x = self.X[idx]
+        x = self._imresize(x)
         if self.is_train:
             x = self.transform(x)
-        x = self._preprocess(x)
+        x = self._totensor(x)
 
         if self.Y is None:
             return x

@@ -132,12 +132,14 @@ class Bottleneck(nn.Module):
 class ResNet(nn.Module):
 
     def __init__(self, block, layers, inplanes, num_classes=1000, zero_init_residual=False,
-                 groups=1, width_per_group=64, replace_stride_with_dilation=None,
-                 norm_layer=None):
+                 groups=1, width_per_group=64, drop_rate=0.2, replace_stride_with_dilation=None,
+                 norm_layer=None, letter_model=None):
         super(ResNet, self).__init__()
         if norm_layer is None:
             norm_layer = nn.BatchNorm2d
         self._norm_layer = norm_layer
+        self.letter_model = letter_model
+        self.drop_rate = drop_rate
 
         self.inplanes = 64
         self.dilation = 1
@@ -150,21 +152,26 @@ class ResNet(nn.Module):
                              "or a 3-element tuple, got {}".format(replace_stride_with_dilation))
         self.groups = groups
         self.base_width = width_per_group
-        self.conv1 = nn.Conv2d(inplanes, self.inplanes, kernel_size=7, stride=2, padding=3,
-                               bias=False)
+        self.conv1 = nn.Conv2d(inplanes, self.inplanes, kernel_size=7, stride=2, padding=3, bias=False)
         self.bn1 = norm_layer(self.inplanes)
         # self.relu = nn.ReLU(inplace=True)
         self.relu = nn.LeakyReLU(inplace=True)
+
         self.maxpool = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
         self.layer1 = self._make_layer(block, 64, layers[0])
+
+        if self.letter_model is not None:
+            self.inplanes *= 2
+
         self.layer2 = self._make_layer(block, 128, layers[1], stride=2,
                                        dilate=replace_stride_with_dilation[0])
         self.layer3 = self._make_layer(block, 256, layers[2], stride=2,
                                        dilate=replace_stride_with_dilation[1])
+
         self.layer4 = self._make_layer(block, 512, layers[3], stride=2,
                                        dilate=replace_stride_with_dilation[2])
         self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
-        self.dropout = nn.Dropout(0.2)
+        self.dropout = nn.Dropout(drop_rate)
         self.fc = nn.Linear(512 * block.expansion, num_classes)
 
         for m in self.modules():
@@ -210,19 +217,28 @@ class ResNet(nn.Module):
 
     def _forward_impl(self, x):
         # See note [TorchScript super()]
+
+        h = x
         x = self.conv1(x)
         x = self.bn1(x)
         x = self.relu(x)
         x = self.maxpool(x)
 
         x = self.layer1(x)
+
+        if self.letter_model is not None:
+            h = self.letter_model(h)
+            #print(h.shape, x.shape)
+            x = torch.cat([x, h], dim=1)
+
         x = self.layer2(x)
         x = self.layer3(x)
-        x = self.layer4(x)
+        x = self.layer4(x) # 7
 
-        x = self.avgpool(x)
+        x = self.avgpool(x) # 8
         x = torch.flatten(x, 1)
-        #x = self.dropout(x)
+        if self.drop_rate > 0:
+            x = self.dropout(x)
         x = self.fc(x)
 
         return x
