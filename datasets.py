@@ -65,7 +65,7 @@ class BaseDataset(torch.utils.data.Dataset):
         self.Y = torch.tensor(Y) if Y is not None else None
         self.is_train = is_train
 
-        self.transform = RandomAffine(threshold=0.3, degrees=20, scale=0.2,
+        self.transform = RandomAffine(threshold=0.3, degrees=25, scale=0.25,
                                       horizontal_shift=0.2, vertical_shift=0.2)
 
     def _imresize(self, img: np.ndarray) -> np.ndarray:
