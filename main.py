@@ -25,10 +25,20 @@ def main(args):
     torch.manual_seed(args.seed)
 
     # hyper parameters
+    letter_model_checkpoint = args.letter_model
+    if letter_model_checkpoint and not os.path.exists(letter_model_checkpoint):
+        raise FileNotFoundError(f'Letter model checkpoint not found:', letter_model_checkpoint)
+
+    finetune_model_checkpoint = args.finetune_model
+    if finetune_model_checkpoint and not os.path.exists(finetune_model_checkpoint):
+        raise FileNotFoundError(f'Finetune mode checkpoint not found:', finetune_model_checkpoint)
+
     experiment_name = args.name
     checkpoint_dir = Path(args.checkpoint_dir) / experiment_name
     checkpoint_dir.mkdir(parents=True, exist_ok=True)
     minimum_checkpoint_epoch = 10  # the minimum epoch to save checkpoint
+    if finetune_model_checkpoint:
+        minimum_checkpoint_epoch = 0
     batch_size = args.batch_size
     num_epochs = args.num_epochs
     train_valid_ratio = args.train_valid_ratio
@@ -37,13 +47,9 @@ def main(args):
     cpus = args.cpus
     gpus = args.gpus
     model_name = args.model_name
-    lr = 1e-3
+    lr = args.lr
     lr_decay_rate = 0.5
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-
-    letter_model_checkpoint = args.letter_model
-    if letter_model_checkpoint and not os.path.exists(letter_model_checkpoint):
-        raise FileNotFoundError(f'Letter model checkpoint not fount: {letter_model_checkpoint}')
 
     # load train data
     train_csv = pd.read_csv('data/train.csv')
@@ -64,16 +70,21 @@ def main(args):
 
     # make model
     if letter_model_checkpoint:
-        model = models.composite_model(letter_model_checkpoint)
+        model = models.composite_model(model_name, letter_model_checkpoint)
+    elif finetune_model_checkpoint:
+        model = models.finetune_model(model_name, finetune_model_checkpoint)
     else:
         model = models.get_digit_model(model_name)
 
     if gpus > 1:
         model = nn.DataParallel(model)
     model = model.to(device)
+
     criterion = nn.CrossEntropyLoss().to(device)
-    # optimizer = torch.optim.Adam(model.parameters())
-    optimizer = torch_optimizer.RAdam(model.parameters(), lr=lr)
+    if finetune_model_checkpoint:
+        optimizer = torch.optim.SGD(model.parameters(), lr=lr)
+    else:
+        optimizer = torch_optimizer.RAdam(model.parameters(), lr=lr)
 
     min_loss = math.inf
     early_stopping_counter = 0
@@ -200,8 +211,10 @@ if __name__ == '__main__':
     p.add_argument('--train-valid-ratio', type=float, default=0.2)
     p.add_argument('--checkpoint-dir', type=str, default='checkpoint')
     p.add_argument('--seed', type=int, default=867243624)
+    p.add_argument('--lr', type=float, default=1e-3)
     p.add_argument('--lr-decay-patience', type=int, default=5)
     p.add_argument('--letter-model', type=str)
+    p.add_argument('--finetune-model', type=str)
     p.add_argument('name', type=str)
     p.add_argument('model_name', type=str)
 

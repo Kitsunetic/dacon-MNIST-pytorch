@@ -65,10 +65,10 @@ class BaseDataset(torch.utils.data.Dataset):
         self.Y = torch.tensor(Y) if Y is not None else None
         self.is_train = is_train
 
-        self.transform = RandomAffine(threshold=0.4, degrees=30, scale=0.25, horizontal_shift=0.25, vertical_shift=0.25)
+        self.transform = RandomAffine(threshold=0.4, degrees=25, scale=0.2, horizontal_shift=0.2, vertical_shift=0.2)
 
     def _imresize(self, img: np.ndarray) -> np.ndarray:
-        img = cv2.resize(img, (280, 280))
+        img = cv2.resize(img, (224, 224))
         img = np.squeeze(img).astype(np.float32) / 255.
         img2 = img * (img >= 0.549)  # 140 / 255
 
