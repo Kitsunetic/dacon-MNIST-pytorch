@@ -44,19 +44,20 @@ def main(args):
     train_valid_ratio = args.train_valid_ratio
     early_stopping_patience = 30
     lr_decay_patience = args.lr_decay_patience
+    lr = args.lr
+    lr_decay_rate = 0.5
+    image_resize = args.image_resize
     cpus = args.cpus
     gpus = args.gpus
     model_name = args.model_name
-    lr = args.lr
-    lr_decay_rate = 0.5
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
     # load train data
     train_csv = pd.read_csv('data/train.csv')
     X, Y, Z = datasets.parse_csv(train_csv)
     X_train, X_valid, Y_train, Y_valid = train_test_split(X, Y, test_size=train_valid_ratio)
-    train_ds = datasets.BaseDataset(X_train, Y_train, is_train=True)
-    valid_ds = datasets.BaseDataset(X_valid, Y_valid, is_train=False)
+    train_ds = datasets.BaseDataset(X_train, Y_train, is_train=True, image_resize=image_resize)
+    valid_ds = datasets.BaseDataset(X_valid, Y_valid, is_train=False, image_resize=image_resize)
     train_loader = DataLoader(train_ds, batch_size, num_workers=cpus, shuffle=True)
     valid_loader = DataLoader(valid_ds, batch_size, num_workers=cpus, shuffle=False)
     print(f'Dataset: train[{len(train_ds)}] validation[{len(valid_ds)}]')
@@ -65,7 +66,7 @@ def main(args):
     test_csv = pd.read_csv('data/test.csv')
     submission = pd.read_csv('data/submission.csv')
     X, Y, Z = datasets.parse_csv(test_csv)
-    submit_ds = datasets.BaseDataset(X, is_train=False)
+    submit_ds = datasets.BaseDataset(X, is_train=False, image_resize=image_resize)
     submit_loader = DataLoader(submit_ds, batch_size, num_workers=cpus, shuffle=False)
 
     # make model
@@ -213,6 +214,7 @@ if __name__ == '__main__':
     p.add_argument('--seed', type=int, default=867243624)
     p.add_argument('--lr', type=float, default=1e-3)
     p.add_argument('--lr-decay-patience', type=int, default=5)
+    p.add_argument('--image-resize', type=int, default=224)
     p.add_argument('--letter-model', type=str)
     p.add_argument('--finetune-model', type=str)
     p.add_argument('name', type=str)

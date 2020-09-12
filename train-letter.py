@@ -27,10 +27,15 @@ def main(args):
     experiment_name = args.name
     checkpoint_dir = Path(args.checkpoint_dir) / experiment_name
     checkpoint_dir.mkdir(parents=True, exist_ok=True)
+    minimum_checkpoint_epoch = 10  # the minimum epoch to save checkpoint
     batch_size = args.batch_size
     num_epochs = args.num_epochs
     train_valid_ratio = args.train_valid_ratio
     early_stopping_patience = 30
+    lr_decay_patience = args.lr_decay_patience
+    lr = args.lr
+    lr_decay_rate = 0.5
+    image_resize = args.image_resize
     cpus = args.cpus
     gpus = args.gpus
     model_name = args.model_name
@@ -40,8 +45,8 @@ def main(args):
     train_csv = pd.read_csv('data/train.csv')
     X, Y, Z = datasets.parse_csv(train_csv)
     X_train, X_valid, Y_train, Y_valid = train_test_split(X, Z, test_size=train_valid_ratio)
-    train_ds = datasets.BaseDataset(X_train, Y_train, is_train=True)
-    valid_ds = datasets.BaseDataset(X_valid, Y_valid, is_train=False)
+    train_ds = datasets.BaseDataset(X_train, Y_train, is_train=True, image_resize=image_resize)
+    valid_ds = datasets.BaseDataset(X_valid, Y_valid, is_train=False, image_resize=image_resize)
     train_loader = DataLoader(train_ds, batch_size, num_workers=cpus, shuffle=True)
     valid_loader = DataLoader(valid_ds, batch_size, num_workers=cpus, shuffle=False)
     print(f'Dataset: train[{len(train_ds)}] validation[{len(valid_ds)}]')
@@ -52,10 +57,11 @@ def main(args):
         model = nn.DataParallel(model)
     model = model.to(device)
     criterion = nn.CrossEntropyLoss().to(device)
-    optimizer = torch_optimizer.RAdam(model.parameters())
+    optimizer = torch_optimizer.RAdam(model.parameters(), lr=lr)
 
     min_loss = math.inf
     early_stopping_counter = 0
+    lr_decay_counter = 0
     for epoch in range(1, num_epochs + 1):
         # train
         model.train()
@@ -104,25 +110,36 @@ def main(args):
 
         # save checkpoint only when val_loss decreased
         if mean_loss < min_loss:
-            time.sleep(0.25)
-            checkpoint_path = str(
-                checkpoint_dir / f'ckpt-epoch{epoch:03d}-val_loss{mean_loss:.4f}-val_acc{accuracy:.4f}.pth')
-            print(f'val_loss decreased from', min_loss, 'to', mean_loss)
-            print('Save checkpoint to', checkpoint_path)
-            with open(checkpoint_path, 'wb') as f:
-                torch.save({
-                    'model_state_dict': model.state_dict() if gpus <= 1 else model.module.state_dict(),
-                    'optimizer_state_dict': optimizer.state_dict()
-                }, f)
+            if epoch > minimum_checkpoint_epoch:
+                time.sleep(0.25)
+                checkpoint_path = str(
+                    checkpoint_dir / f'ckpt-epoch{epoch:03d}-val_loss{mean_loss:.4f}-val_acc{accuracy:.4f}.pth')
+                print(f'val_loss decreased from', min_loss, 'to', mean_loss)
+                print('Save checkpoint to', checkpoint_path)
+                with open(checkpoint_path, 'wb') as f:
+                    torch.save({
+                        'model_state_dict': model.state_dict() if gpus <= 1 else model.module.state_dict(),
+                        'optimizer_state_dict': optimizer.state_dict()
+                    }, f)
 
-            min_loss = mean_loss
-            early_stopping_counter = 0
+                min_loss = mean_loss
+                early_stopping_counter = 0
+                lr_decay_counter = 0
         else:
             # early stopping
             early_stopping_counter += 1
             if early_stopping_counter > early_stopping_patience:
                 print('Early stopping: val_loss didn\'t decreased for', early_stopping_counter, 'epochs.')
                 break
+
+            # lr decay
+            lr_decay_counter += 1
+            if lr_decay_counter > lr_decay_patience:
+                print('LR decaying from', lr, 'to', lr * lr_decay_rate)
+                lr_decay_counter = 0
+                lr *= lr_decay_rate
+                for param_group in optimizer.param_groups:
+                    param_group['lr'] = lr
 
 
 if __name__ == '__main__':
@@ -134,6 +151,9 @@ if __name__ == '__main__':
     p.add_argument('--train-valid-ratio', type=float, default=0.2)
     p.add_argument('--checkpoint-dir', type=str, default='checkpoint')
     p.add_argument('--seed', type=int, default=867243624)
+    p.add_argument('--lr', type=float, default=1e-3)
+    p.add_argument('--lr-decay-patience', type=int, default=5)
+    p.add_argument('--image-resize', type=int, default=224)
     p.add_argument('name', type=str)
     p.add_argument('model_name', type=str)
 
