@@ -2,9 +2,9 @@ from pathlib import Path
 
 import torch
 import torch.nn as nn
-from efficientnet_pytorch import EfficientNet
 
 import modified_resnet
+from modified_efficientnet import EfficientNet
 
 
 def get_digit_model(model_name_: str) -> nn.Module:
@@ -29,6 +29,18 @@ def get_letter_model(model_name_: str) -> nn.Module:
     return model
 
 
+def from_name(model_name_: str, num_classes: int, letter_model=None) -> nn.Module:
+    model_name = model_name_.lower()
+    if model_name.startswith('resnet') or model_name.startswith('resnext'):
+        model: nn.Module = getattr(modified_resnet, model_name)(pretrained=False, progress=False,
+                                                                num_classes=10, letter_model=letter_model)
+    elif model_name.startswith('efficientnet'):
+        model: nn.Module = EfficientNet.from_name(model_name, num_classes=num_classes)
+    else:
+        raise NotImplementedError(f'Unknown model name: {model_name_}')
+    return model
+
+
 def composite_model(model_name_: str, letter_checkpoint_path: Path) -> nn.Module:
     model_name = model_name_.lower()
     letter_model = get_letter_model(model_name)
@@ -42,7 +54,8 @@ def composite_model(model_name_: str, letter_checkpoint_path: Path) -> nn.Module
     for param in feat_out.parameters():
         param.requires_grad = False
 
-    model: nn.Module = getattr(modified_resnet, model_name)(pretrained=False, progress=False, letter_model=feat_out)
+    model: nn.Module = getattr(modified_resnet, model_name)(pretrained=False, progress=False,
+                                                            num_classes=10, letter_model=feat_out)
     return model
 
 
@@ -50,7 +63,8 @@ def finetune_model(model_name_: str, finetune_path: Path) -> nn.Module:
     model_name = model_name_.lower()
     letter_model = get_letter_model(model_name)
     feat_out = nn.Sequential(*list(letter_model.children())[:5])
-    model: nn.Module = getattr(modified_resnet, model_name)(pretrained=False, progress=False, letter_model=feat_out)
+    model: nn.Module = getattr(modified_resnet, model_name)(pretrained=False, progress=False,
+                                                            num_classes=10, letter_model=feat_out)
 
     print('Load finetune-model checkpoint:', finetune_path)
     with open(finetune_path, 'rb') as f:

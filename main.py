@@ -76,6 +76,7 @@ def main(args):
         model = models.finetune_model(model_name, finetune_model_checkpoint)
     else:
         model = models.get_digit_model(model_name)
+    print(model)
 
     if gpus > 1:
         model = nn.DataParallel(model)
@@ -183,24 +184,34 @@ def main(args):
     # submitting
     with torch.no_grad():
         model.eval()
+        outputs = []
         prediction = []
         for x in tqdm(submit_loader, desc='submission', ncols=100):
             x = x.to(device)
             output = model(x)
             _, preds = torch.max(output.data, 1)
+            outputs = output.data
             prediction.append(preds)
+        outputs = torch.cat(outputs, dim=0)
         prediction = torch.cat(prediction, dim=0)
 
     # compose submission into csv
-    id, digit = [], []
-    for pred, (_, row) in zip(prediction, submission.iterrows()):
+    id, digit, score = [], [], [[] for _ in range(10)]
+    for pred, output, (_, row) in zip(prediction, outputs, submission.iterrows()):
         id.append(row['id'])
         digit.append(pred.item())
+        for i in range(10):
+            score[i].append(output[i])
 
     submission = pd.DataFrame({'id': id, 'digit': digit})
-    submission_path = str(checkpoint_dir / f'submission-{experiment_name}.csv')
-    print('Write submission:', submission_path)
+    submission_path = str(checkpoint_dir / f'submission-{experiment_name}-{mean_loss}.csv')
+    score_submission = {'id': id}
+    score_submission.update({str(i): score[i] for i in range(10)})
+    score_submission = pd.DataFrame(score_submission)
+    score_submission_path = str(checkpoint_dir / f'submission-raw-{experiment_name}-{mean_loss}.csv')
+    print('Write submission:', submission_path, score_submission_path)
     submission.to_csv(submission_path, index=False)
+    score_submission.to_csv(score_submission_path, index=False)
 
 
 if __name__ == '__main__':

@@ -53,6 +53,7 @@ def main(args):
 
     # make model
     model = models.get_letter_model(model_name)
+    print(model)
     if gpus > 1:
         model = nn.DataParallel(model)
     model = model.to(device)
