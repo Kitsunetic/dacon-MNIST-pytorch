@@ -7,68 +7,44 @@ import modified_resnet
 from modified_efficientnet import EfficientNet
 
 
-def get_digit_model(model_name_: str) -> nn.Module:
+def from_name(model_name_: str, letter_model=None, num_classes=10) -> nn.Module:
+    """
+    모델 생성. letter-model은 `letter_model`에 값을 주면 되고, finetune-model은 그냥 생성 후 load_weight를 이용
+    :param model_name_:
+    :param num_classes: 10 for digit model. 26 for letter model.
+    :param in_channels:
+    :param letter_model: letter-model의 checkpoint
+    :return:
+    """
     model_name = model_name_.lower()
-
     if model_name.startswith('resnet') or model_name.startswith('resnext'):
-        model: nn.Module = getattr(modified_resnet, model_name)(pretrained=False, progress=False, num_classes=10)
+        if letter_model:
+            with open(letter_model, 'rb') as f:
+                data = torch.load(f)
+            letter_model = modified_resnet.from_name(model_name, False, False,
+                                                     in_planes=2, num_classes=26)
+            letter_model.load_state_dict(data['model_state_dict'])
+            feature_extractor = nn.Sequential(*list(letter_model.children())[:5])
+        else:
+            feature_extractor = None
+
+        model = modified_resnet.from_name(model_name, pretrained=False, progress=False,
+                                          in_planes=2, num_classes=num_classes,
+                                          letter_model=feature_extractor)
+
     elif model_name.startswith('efficientnet'):
-        model: nn.Module = EfficientNet.from_name(model_name, in_channels=2)
+        if letter_model:
+            with open(letter_model, 'rb') as f:
+                data = torch.load(f)
+            letter_model = EfficientNet.from_name(model_name, in_channels=2, num_classes=26)
+            letter_model.load_state_dict(data['model_state_dict'])
+        else:
+            letter_model = None
+
+        model = EfficientNet.from_name(model_name, in_channels=2, num_classes=num_classes,
+                                       letter_model=letter_model)
+
     else:
         raise NotImplementedError(f'Unknown model name: {model_name_}')
-    return model
-
-
-def get_letter_model(model_name_: str) -> nn.Module:
-    model_name = model_name_.lower()
-
-    if model_name.startswith('resnet') or model_name.startswith('resnext'):
-        model: nn.Module = getattr(modified_resnet, model_name)(pretrained=False, progress=False, num_classes=26)
-    else:
-        raise NotImplementedError(f'Unknown model name: {model_name_}')
-    return model
-
-
-def from_name(model_name_: str, num_classes: int, letter_model=None) -> nn.Module:
-    model_name = model_name_.lower()
-    if model_name.startswith('resnet') or model_name.startswith('resnext'):
-        model: nn.Module = getattr(modified_resnet, model_name)(pretrained=False, progress=False,
-                                                                num_classes=10, letter_model=letter_model)
-    elif model_name.startswith('efficientnet'):
-        model: nn.Module = EfficientNet.from_name(model_name, num_classes=num_classes)
-    else:
-        raise NotImplementedError(f'Unknown model name: {model_name_}')
-    return model
-
-
-def composite_model(model_name_: str, letter_checkpoint_path: Path) -> nn.Module:
-    model_name = model_name_.lower()
-    letter_model = get_letter_model(model_name)
-
-    print('Load letter-model checkpoint:', letter_checkpoint_path)
-    with open(letter_checkpoint_path, 'rb') as f:
-        checkpoint = torch.load(f)
-        letter_model.load_state_dict(checkpoint['model_state_dict'])
-
-    feat_out = nn.Sequential(*list(letter_model.children())[:5])
-    for param in feat_out.parameters():
-        param.requires_grad = False
-
-    model: nn.Module = getattr(modified_resnet, model_name)(pretrained=False, progress=False,
-                                                            num_classes=10, letter_model=feat_out)
-    return model
-
-
-def finetune_model(model_name_: str, finetune_path: Path) -> nn.Module:
-    model_name = model_name_.lower()
-    letter_model = get_letter_model(model_name)
-    feat_out = nn.Sequential(*list(letter_model.children())[:5])
-    model: nn.Module = getattr(modified_resnet, model_name)(pretrained=False, progress=False,
-                                                            num_classes=10, letter_model=feat_out)
-
-    print('Load finetune-model checkpoint:', finetune_path)
-    with open(finetune_path, 'rb') as f:
-        checkpoint = torch.load(f)
-        model.load_state_dict(checkpoint['model_state_dict'])
 
     return model

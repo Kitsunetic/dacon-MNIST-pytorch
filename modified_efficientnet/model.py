@@ -6,6 +6,8 @@
 # Github repo: https://github.com/lukemelas/EfficientNet-PyTorch
 # With adjustments and added comments by workingcoder (github username).
 
+from typing import Optional
+
 import torch
 from torch import nn
 from torch.nn import functional as F
@@ -152,12 +154,16 @@ class EfficientNet(nn.Module):
         >>> outputs = model(inputs)
     """
 
-    def __init__(self, blocks_args=None, global_params=None, letter_model=None):
+    def __init__(self, blocks_args=None, global_params=None, letter_model: Optional[nn.Module] = None):
         super().__init__()
         assert isinstance(blocks_args, list), 'blocks_args should be a list'
         assert len(blocks_args) > 0, 'block args must be greater than 0'
         self._global_params = global_params
         self._blocks_args = blocks_args
+        self._letter_model = letter_model
+        if self._letter_model:
+            for p in self._letter_model.parameters():
+                p.requires_grad = False
 
         # Batch norm parameters
         bn_mom = 1 - self._global_params.batch_norm_momentum
@@ -298,6 +304,11 @@ class EfficientNet(nn.Module):
         """
         # Convolution layers
         x = self.extract_features(inputs)
+
+        if self._letter_model is not None:
+            h = self._letter_model.extract_features(inputs)
+            x = torch.cat([x, h], dim=1)
+
         # Pooling and final linear layer
         x = self._avg_pooling(x)
         if self._global_params.include_top:

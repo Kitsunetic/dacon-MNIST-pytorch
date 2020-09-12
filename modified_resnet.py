@@ -228,14 +228,14 @@ class ResNet(nn.Module):
 
         if self.letter_model is not None:
             h = self.letter_model(h)
-            #print(h.shape, x.shape)
+            # print(h.shape, x.shape)
             x = torch.cat([x, h], dim=1)
 
         x = self.layer2(x)
         x = self.layer3(x)
-        x = self.layer4(x) # 7
+        x = self.layer4(x)  # 7
 
-        x = self.avgpool(x) # 8
+        x = self.avgpool(x)  # 8
         x = torch.flatten(x, 1)
         if self.drop_rate > 0:
             x = self.dropout(x)
@@ -247,10 +247,28 @@ class ResNet(nn.Module):
         return self._forward_impl(x)
 
 
-def _resnet(arch, block, layers, pretrained, progress, **kwargs):
-    pretrained = False
-    progress = False
-    model = ResNet(block, layers, 2, **kwargs)
+def _resnet(arch, block, layers, pretrained=False, progress=False, **kwargs):
+    model = ResNet(block, layers, **kwargs)
+    return model
+
+
+def from_name(model_name_: str, pretrained=False, progress=True,
+              in_planes=3, num_classes=1000, letter_model=None) -> ResNet:
+    model_name = model_name_.lower()
+
+    # TODO why locals() cannot find resnext
+    if model_name == 'resnext101_32x8d':
+        model_fn = resnext101_32x8d
+    elif model_name == 'resnext50_32x4d':
+        model_fn = resnext50_32x4d
+    else:
+        model_fn = locals().get(model_name)
+
+    if model_fn is None:
+        raise NotImplementedError(f'Unknown model name: {model_name_}')
+
+    model: ResNet = model_fn(pretrained, progress,
+                             inplanes=in_planes, num_classes=num_classes, letter_model=letter_model)
     return model
 
 

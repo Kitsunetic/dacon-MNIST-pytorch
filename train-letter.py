@@ -52,8 +52,9 @@ def main(args):
     print(f'Dataset: train[{len(train_ds)}] validation[{len(valid_ds)}]')
 
     # make model
-    model = models.get_letter_model(model_name)
+    model = models.from_name(model_name, num_classes=26)
     print(model)
+
     if gpus > 1:
         model = nn.DataParallel(model)
     model = model.to(device)

@@ -70,12 +70,11 @@ def main(args):
     submit_loader = DataLoader(submit_ds, batch_size, num_workers=cpus, shuffle=False)
 
     # make model
-    if letter_model_checkpoint:
-        model = models.composite_model(model_name, letter_model_checkpoint)
-    elif finetune_model_checkpoint:
-        model = models.finetune_model(model_name, finetune_model_checkpoint)
-    else:
-        model = models.get_digit_model(model_name)
+    model = models.from_name(model_name, letter_model_checkpoint)
+    if finetune_model_checkpoint:
+        with open(finetune_model_checkpoint, 'rb') as f:
+            model_state_dict = torch.load(f)['model_state_dict']
+            model.load_state_dict(model_state_dict)
     print(model)
 
     if gpus > 1:
