@@ -146,3 +146,6 @@ cython_debug/
 /checkpoints
 /checkpoint
 *.yuv
+/submissions
+*.pth
+*.pkl
