@@ -27,7 +27,6 @@ def main(args):
     experiment_name = args.name
     checkpoint_dir = Path(args.checkpoint_dir) / experiment_name
     checkpoint_dir.mkdir(parents=True, exist_ok=True)
-    minimum_checkpoint_epoch = 10  # the minimum epoch to save checkpoint
     batch_size = args.batch_size
     num_epochs = args.num_epochs
     train_valid_ratio = args.train_valid_ratio
@@ -53,7 +52,6 @@ def main(args):
 
     # make model
     model = models.from_name(model_name, num_classes=26)
-    print(model)
 
     if gpus > 1:
         model = nn.DataParallel(model)
@@ -112,21 +110,20 @@ def main(args):
 
         # save checkpoint only when val_loss decreased
         if mean_loss < min_loss:
-            if epoch > minimum_checkpoint_epoch:
-                time.sleep(0.25)
-                checkpoint_path = str(
-                    checkpoint_dir / f'ckpt-epoch{epoch:03d}-val_loss{mean_loss:.4f}-val_acc{accuracy:.4f}.pth')
-                print(f'val_loss decreased from', min_loss, 'to', mean_loss)
-                print('Save checkpoint to', checkpoint_path)
-                with open(checkpoint_path, 'wb') as f:
-                    torch.save({
-                        'model_state_dict': model.state_dict() if gpus <= 1 else model.module.state_dict(),
-                        'optimizer_state_dict': optimizer.state_dict()
-                    }, f)
+            time.sleep(0.1)
+            checkpoint_path = str(
+                checkpoint_dir / f'ckpt-epoch{epoch:03d}-val_loss{mean_loss:.4f}-val_acc{accuracy:.4f}.pth')
+            print(f'val_loss decreased from', min_loss, 'to', mean_loss)
+            print('Save checkpoint to', checkpoint_path)
+            with open(checkpoint_path, 'wb') as f:
+                torch.save({
+                    'model_state_dict': model.state_dict() if gpus <= 1 else model.module.state_dict(),
+                    'optimizer_state_dict': optimizer.state_dict()
+                }, f)
 
-                min_loss = mean_loss
-                early_stopping_counter = 0
-                lr_decay_counter = 0
+            min_loss = mean_loss
+            early_stopping_counter = 0
+            lr_decay_counter = 0
         else:
             # early stopping
             early_stopping_counter += 1
