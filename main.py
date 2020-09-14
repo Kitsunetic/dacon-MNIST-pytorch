@@ -47,12 +47,26 @@ def main(args):
     cpus = args.cpus
     gpus = args.gpus
     model_name = args.model_name
+    k_fold = args.k_fold
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
     # load train data
     train_csv = pd.read_csv('data/train.csv')
     X, Y, Z = datasets.parse_csv(train_csv)
-    X_train, X_valid, Y_train, Y_valid = train_test_split(X, Y, test_size=train_valid_ratio)
+    if 1 <= k_fold or k_fold <= 4:
+        size = X.shape[0]
+        dsize = size // 4
+        X_valid = X[dsize * (k_fold - 1):dsize * k_fold]
+        Y_valid = Y[dsize * (k_fold - 1):dsize * k_fold]
+        X_train, Y_train = [], []
+        for i in range(4):
+            if i != k_fold - 1:
+                X_train.append(X[dsize * (k_fold - 1):dsize * k_fold])
+                Y_train.append(Y[dsize * (k_fold - 1):dsize * k_fold])
+        X_train = np.concatenate(X_train)
+        Y_train = np.concatenate(Y_train)
+    else:
+        X_train, X_valid, Y_train, Y_valid = train_test_split(X, Y, test_size=train_valid_ratio)
     train_ds = datasets.BaseDataset(X_train, Y_train, is_train=True, image_resize=image_resize)
     valid_ds = datasets.BaseDataset(X_valid, Y_valid, is_train=False, image_resize=image_resize)
     train_loader = DataLoader(train_ds, batch_size, num_workers=cpus, shuffle=True)
@@ -223,6 +237,7 @@ if __name__ == '__main__':
     p.add_argument('--image-resize', type=int, default=224)
     p.add_argument('--letter-model', type=str)
     p.add_argument('--finetune-model', type=str)
+    p.add_argument('--k-fold', type=int, default=-1)
     p.add_argument('name', type=str)
     p.add_argument('model_name', type=str)
 
